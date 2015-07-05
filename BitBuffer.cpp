@@ -11,7 +11,6 @@
  *		- reflect instance parameters in buffer itself and use dynamic range for those (e.g. bitIndex instead of predefined long) to
  *			reduce memory footprint
  *		- also represent local variables in buffer to avoid Arduino memory clustering (Bjoern)
- *		- define DEBUG statements via macro and separate into different debug level (Bjoern)
  *		- minimize number of local variables (e.g. already identified marked with TODO)
  *		- decide on license for publishing library
  *		- remove DEBUG code sections for final release
@@ -27,7 +26,16 @@
  *
  *	Thanks to Sigurður Örn Aðalgeirsson (siggi@media.mit.edu) for his ByteBuffer project and the reference it gave.
  */
-
+ 
+/*
+ *	DEBUGGING
+ *  for debugging purpose define BB_DEBUG_LEVEL with one of the below values, all debug information will be sent to Serial
+ *	0 - no debug information
+ *	1 - high level information (size of created array, ...); this also makes runTest() and printContent2Serial() method available to you
+ *	2 - more detailed processing information (index data is inserted, internal states after getValue, ...)
+ *	3 - bit level information for error search
+ */
+ 
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
 #else
@@ -74,10 +82,9 @@ boolean s_full; //keep state whether first overrun of FIFO happened already
  * p_size - defines the number of entries in this FIFO store before data will be overwritten
  */
 BitBuffer::BitBuffer(byte p_range, unsigned int p_size) {
-  //DEBUG
-  /*
+  #if BB_DEBUG_LEVEL > 0
   Serial.begin(9600);
-  */
+  #endif
   
   //initialize members
   s_overflow = BitBuffer::OVERFLOW_SKIP;
@@ -88,13 +95,15 @@ BitBuffer::BitBuffer(byte p_range, unsigned int p_size) {
   s_size = p_size;
   s_full = false;
   
+  //TODO define maximum size to avoid buffer overflow - how to calculate avilable memory size...
   s_data = (byte*)malloc(getArraySize());
   
-  //DEBUG
-  /*
-  Serial.print("Array size: ");
+  #if BB_DEBUG_LEVEL > 0
+  Serial.print("Contructor::Array size: ");
   Serial.println(getArraySize());
-  */
+  Serial.print("Contructor::Bit size: ");
+  Serial.println(getBitSize());
+  #endif
 }
 
 /*
@@ -125,7 +134,7 @@ unsigned int BitBuffer::getSize() {
 }
 
 // returns the number of values currently stored in buffer
-unsigned int BitBuffer::getValueCount() {
+unsigned int BitBuffer::getValueCount() { 
 	return (s_full ? s_size : s_bitIndex / getBitSize()) - s_popCount;
 }
 
@@ -153,11 +162,10 @@ boolean BitBuffer::push(unsigned int p_value) {
   int index = (int) (s_bitIndex / 8);
   int offset = s_bitIndex % 8;
   
-  //DEBUG
-  /*
-  Serial.print("Index for push: ");
+  #if BB_DEBUG_LEVEL > 1
+  Serial.print("Push::Index for push: ");
   Serial.println(index);
-  */
+  #endif
   
   byte *arrayValue = &s_data[index];
   byte mask = 0xFF;
@@ -174,25 +182,23 @@ boolean BitBuffer::push(unsigned int p_value) {
 	  mask = mask << (8 - getBitSize());
 	  mask = mask >> offset;
 	  
-      //DEBUG
-	  /*
-	  Serial.print("Mask non-inverted: ");
+      #if BB_DEBUG_LEVEL > 2
+	  Serial.print("Push::Mask non-inverted: ");
 	  Serial.println(mask);
-	  Serial.print("Mask inverted: ");
+	  Serial.print("Push::Mask inverted: ");
 	  Serial.println(0xFF - mask);	  
-	  Serial.print("Array value before: ");
+	  Serial.print("Push::Array value before: ");
 	  Serial.println(*arrayValue);
-	  */
+	  #endif
 	  
       // value stored before: 11000000, value new: 00001111, value shifted: 00111100, after storage: 11111100
       // ensure that bits at location that value will be put to are reverted beforehand by using inverted mask
 	  *arrayValue = (*arrayValue & (0xFF - mask)) | valueLow;
 	  
-      //DEBUG
-	  /*
-	  Serial.print("Array value after: ");
+      #if BB_DEBUG_LEVEL > 2
+	  Serial.print("Push::Array value after: ");
 	  Serial.println(*arrayValue);
-	  */
+	  #endif
     }
     else //<256 but beyond current byte for storing at current position
     {
@@ -203,15 +209,14 @@ boolean BitBuffer::push(unsigned int p_value) {
 	  mask = mask << (8 - getBitSize());
 	  mask = mask >> (8 - getBitSize() + overlength);
 	  
-	  //DEBUG
-	  /*
-	  Serial.print("Mask non-inverted: ");
+	  #if BB_DEBUG_LEVEL > 2
+	  Serial.print("Push::Mask non-inverted: ");
 	  Serial.println(mask);
-	  Serial.print("Mask inverted: ");
+	  Serial.print("Push::Mask inverted: ");
 	  Serial.println(0xFF - mask);	  
-	  Serial.print("Value1: ");
+	  Serial.print("Push::Value1: ");
 	  Serial.println(v1);
-	  */
+	  #endif
 	  
       *arrayValue = (*arrayValue & (0xFF - mask)) | v1;
 	  
@@ -219,15 +224,14 @@ boolean BitBuffer::push(unsigned int p_value) {
       arrayValue = &s_data[index + 1];
 	  mask = 0xFF << (8 - overlength);
 	  
-	  //DEBUG
-	  /*
-	  Serial.print("Mask non-inverted: ");
+	  #if BB_DEBUG_LEVEL > 2
+	  Serial.print("Push::Mask non-inverted: ");
 	  Serial.println(mask);
-	  Serial.print("Mask inverted: ");
+	  Serial.print("Push::Mask inverted: ");
 	  Serial.println(0xFF - mask);	  
-	  Serial.print("Value2: ");
+	  Serial.print("Push::Value2: ");
 	  Serial.println(v2);
-	  */
+	  #endif
 	  
       *arrayValue = (*arrayValue & (0xFF - mask)) | v2;
     }
@@ -246,13 +250,12 @@ boolean BitBuffer::push(unsigned int p_value) {
 		  mask = mask << 8 - (getBitSize() - 8) - (8 - overlength); //TODO to be replaced by 8 - offset???
 		  mask = mask >> 8 - (getBitSize() - 8) - (8 - overlength);
 		  
-		  //DEBUG
-		  /*
-		  Serial.print("Mask non-inverted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("Push::Mask non-inverted: ");
 		  Serial.println(mask);
-		  Serial.print("Value1: ");
+		  Serial.print("Push::Value1: ");
 		  Serial.println(v1);
-		  */
+		  #endif
 		  
 		  *arrayValue = (*arrayValue & (0xFF - mask)) | v1;
 		  
@@ -260,13 +263,12 @@ boolean BitBuffer::push(unsigned int p_value) {
 		  arrayValue = &s_data[index + 1];
 		  mask = 0xFF << (8 - overlength);
 		  
-		  //DEBUG
-		  /*
-		  Serial.print("Mask non-inverted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("Push::Mask non-inverted: ");
 		  Serial.println(mask);	  
-		  Serial.print("Value2: ");
+		  Serial.print("Push::Value2: ");
 		  Serial.println(v2);
-		  */
+		  #endif
 		  
 		  *arrayValue = (*arrayValue & (0xFF - mask)) | v2;
 	  }
@@ -281,13 +283,12 @@ boolean BitBuffer::push(unsigned int p_value) {
 		  mask = mask << offset;
 		  mask = mask >> offset;
 
-		  //DEBUG
-		  /*
-		  Serial.print("Mask non-inverted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("Push::Mask non-inverted: ");
 		  Serial.println(mask);
-		  Serial.print("Value1: ");
+		  Serial.print("Push::Value1: ");
 		  Serial.println(v1);
-		  */
+		  #endif
 		  
 		  *arrayValue = (*arrayValue & (0xFF - mask)) | v1;
 		  
@@ -295,15 +296,14 @@ boolean BitBuffer::push(unsigned int p_value) {
 		  byte v2 = ((byte *)&valueIntShifted)[1];
 		  mask = 0xFF;
 
-		  //DEBUG
-		  /*
-		  Serial.print("Value shifted (midByte, lowByte): ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("Push::Value shifted (midByte, lowByte): ");
 		  Serial.println(valueIntShifted);
-		  Serial.print("Mask non-inverted: ");
+		  Serial.print("Push::Mask non-inverted: ");
 		  Serial.println(mask);	  
-		  Serial.print("Value2: ");
+		  Serial.print("Push::Value2: ");
 		  Serial.println(v2);
-		  */
+		  #endif
 		  
 		  arrayValue = &s_data[index + 1];
 		  *arrayValue = v2;
@@ -311,13 +311,12 @@ boolean BitBuffer::push(unsigned int p_value) {
 		  byte v3 = ((byte *)&valueIntShifted)[0];
 		  mask = 0xFF << 8 - overlength;
 		  
-		  //DEBUG
-		  /*
-		  Serial.print("Mask non-inverted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("Push::Mask non-inverted: ");
 		  Serial.println(mask);	  
-		  Serial.print("Value3: ");
+		  Serial.print("Push::Value3: ");
 		  Serial.println(v3);
-		  */
+		  #endif
 		  
 		  arrayValue = &s_data[index + 2];
 		  *arrayValue = (*arrayValue & (0xFF - mask)) | v3;
@@ -329,11 +328,10 @@ boolean BitBuffer::push(unsigned int p_value) {
   if(s_popCount > 0) {
 	  s_popCount--;
 	  
-	  //DEBUG
-	  /*
-	  Serial.print("Decreased popCounter: ");
+	  #if BB_DEBUG_LEVEL > 1
+	  Serial.print("Push::Decreased popCounter: ");
 	  Serial.println(s_popCount);
-	  */
+	  #endif
   }
   
   return true;
@@ -350,11 +348,10 @@ unsigned int BitBuffer::pop() {
 	
 	s_popCount++;
 	
-	//DEBUG
-	/*
-	Serial.print("Increased popCounter: ");
+	#if BB_DEBUG_LEVEL > 1
+	Serial.print("Pop::Increased popCounter: ");
 	Serial.println(s_popCount);
-	*/
+	#endif
 	
 	return ret;
 } //END pop
@@ -383,23 +380,21 @@ unsigned int BitBuffer::getValue(unsigned p_index) {
 	else
 		bitIndex = getSize() * getBitSize() - bitDelta + s_bitIndex;
 	
-	//DEBUG
-	/*
-	Serial.print("Value count: ");
+	#if BB_DEBUG_LEVEL > 1
+	Serial.print("GetValue::Value count: ");
 	Serial.println(getValueCount());
-	Serial.print("BitDelta: ");
+	Serial.print("GetValue::BitDelta: ");
 	Serial.println(bitDelta);
-	Serial.print("Current BitIndex: ");
+	Serial.print("GetValue::Current BitIndex: ");
 	Serial.println(s_bitIndex);
-	Serial.print("Value BitIndex: ");
+	Serial.print("GetValue::Value BitIndex: ");
 	Serial.println(bitIndex);
-	*/	
+	#endif
 	
 	return getValueInternal(bitIndex);	
 } //END getValue
 
-//DEBUG
-//TODO how to setup static method??
+#if BB_DEBUG_LEVEL > 0
 void BitBuffer::runTest() {
 	//TODO do this for all ranges
 	for(int k = 0; k < 15; k++)
@@ -521,9 +516,9 @@ void BitBuffer::runTest() {
 		buffer.printContent2Serial();
 	}
 }
+#endif
 
-
-//DEBUG
+#if BB_DEBUG_LEVEL > 0
 void BitBuffer::printContent2Serial() {  
 	//get bitIndex of first existing entry to calculate range of not-popped entries
 	unsigned long bitDelta = (getValueCount()) * getBitSize();
@@ -535,19 +530,18 @@ void BitBuffer::printContent2Serial() {
 	else
 		initialBitIndex = getSize() * getBitSize() - bitDelta + s_bitIndex;
 	
-	//DEBUG
-	/*
-	Serial.print("BitSize: ");
+	#if BB_DEBUG_LEVEL > 2
+	Serial.print("printContent2Serial::BitSize: ");
 	Serial.println(getBitSize());
-	Serial.print("BitIndex: ");
+	Serial.print("printContent2Serial::BitIndex: ");
 	Serial.println(s_bitIndex);
-	Serial.print("Max BitIndex: ");
+	Serial.print("printContent2Serial::Max BitIndex: ");
 	Serial.println(getArraySize() * 8);
-	Serial.print("Filled: ");
+	Serial.print("printContent2Serial::Filled: ");
 	Serial.println(s_full);
-	Serial.print("First index excl. popped: ");
+	Serial.print("printContent2Serial::First index excl. popped: ");
 	Serial.println(initialBitIndex);
-	*/
+	#endif
 	
 	Serial.print("[");
   
@@ -583,7 +577,7 @@ void BitBuffer::printContent2Serial() {
 
 	Serial.println("]");
 } //END printContent2Serial
-
+#endif
 
 
 /*####################################
@@ -652,14 +646,13 @@ unsigned int BitBuffer::getValueInternal(unsigned long p_bitIndex) {
       mask = 0xFF << (8 - getBitSize());
       mask = mask >> offset;
 	  
-	  //DEBUG
-	  /*
+	  #if BB_DEBUG_LEVEL > 2
 	  Serial.println("");
-	  Serial.print("mask: ");
+	  Serial.print("GetValueInternal::mask: ");
 	  Serial.println(mask);
-	  Serial.print("Array value: ");
+	  Serial.print("GetValueInternal::Array value: ");
 	  Serial.println(*arrayValue);
-      */
+      #endif
 	  
       byte v1 = *arrayValue & mask;
 	  v1 = v1 >> (8 - offset - getBitSize());
@@ -675,25 +668,23 @@ unsigned int BitBuffer::getValueInternal(unsigned long p_bitIndex) {
       mask = mask >> offset;
       byte valueHigh = *arrayValue & mask;
       
-	  //DEBUG
-	  /*
-	  Serial.print("mask: ");
+	  #if BB_DEBUG_LEVEL > 2
+	  Serial.print("GetValueInternal::mask: ");
 	  Serial.println(mask);
-	  Serial.print("Array value1: ");
+	  Serial.print("GetValueInternal::Array value1: ");
 	  Serial.println(*arrayValue);
-	  */
+	  #endif
 	  
       mask = 0xFF << (8 - overlength);
       arrayValue = &s_data[((int) p_bitIndex / 8 + 1)];
       byte valueLow = *arrayValue & mask;
 
-	  //DEBUG
-	  /*
-	  Serial.print("mask: ");
+	  #if BB_DEBUG_LEVEL > 2
+	  Serial.print("GetValueInternal::mask: ");
 	  Serial.println(mask);
-	  Serial.print("Array value2: ");
+	  Serial.print("GetValueInternal::Array value2: ");
 	  Serial.println(*arrayValue);
-	  */
+	  #endif
 	  
 	  if(getMaxRangeValue() <= RANGE256)
 	  { 
@@ -701,13 +692,12 @@ unsigned int BitBuffer::getValueInternal(unsigned long p_bitIndex) {
 		  valueHigh = valueHigh << overlength;
 		  valueLow = valueLow >> (8 - overlength);
 		  
-		  //DEBUG
-		  /*
-		  Serial.print("Value1 shifted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("GetValueInternal::Value1 shifted: ");
 		  Serial.println(valueHigh);
-		  Serial.print("Value2 shifted: ");
+		  Serial.print("GetValueInternal::Value2 shifted: ");
 		  Serial.println(valueLow);
-		  */
+		  #endif
 		  
 		  return getIntegerValue(0x00, valueHigh | valueLow);
 	  }
@@ -716,21 +706,19 @@ unsigned int BitBuffer::getValueInternal(unsigned long p_bitIndex) {
 		  // value stored before: 00011111|11111100, return value: 00000111|11111111
 		  unsigned int valueIntShifted = getIntegerValue(valueHigh, valueLow);
 		  
-		  //DEBUG
-		  /*
-		  Serial.print("Value before shift: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("GetValueInternal::Value before shift: ");
 		  Serial.println(valueIntShifted);
-		  */
+		  #endif
 		  
 		  valueIntShifted = valueIntShifted >> (16 - (offset + getBitSize()));
 
-		  //DEBUG
-		  /*
-		  Serial.print("Value1 shifted: ");
+		  #if BB_DEBUG_LEVEL > 2
+		  Serial.print("GetValueInternal::Value1 shifted: ");
 		  Serial.println(((byte *) &valueIntShifted)[1]);
-		  Serial.print("Value2 shifted: ");
+		  Serial.print("GetValueInternal::Value2 shifted: ");
 		  Serial.println(((byte *) &valueIntShifted)[0]);
-		  */
+		  #endif
 		  
 		  return valueIntShifted;
 	  }
@@ -744,28 +732,26 @@ unsigned int BitBuffer::getValueInternal(unsigned long p_bitIndex) {
 		((byte *) &valueLongShifted)[1] = s_data[((int) p_bitIndex / 8 + 1)];
 		((byte *) &valueLongShifted)[0] = s_data[((int) p_bitIndex / 8 + 2)];
 		
-		//DEBUG
-		/*
-		Serial.print("Array value1: ");
+		#if BB_DEBUG_LEVEL > 2
+		Serial.print("GetValueInternal::Array value1: ");
 		Serial.println(*arrayValue);
-		Serial.print("Array value2: ");
+		Serial.print("GetValueInternal::Array value2: ");
 		Serial.println(s_data[((int) p_bitIndex / 8 + 1)]);
-		Serial.print("Array value3: ");
+		Serial.print("GetValueInternal::Array value3: ");
 		Serial.println(s_data[((int) p_bitIndex / 8 + 2)]);
-		Serial.print("Value before shift: ");
+		Serial.print("GetValueInternal::Value before shift: ");
 		Serial.println(valueLongShifted);
-		*/
+		#endif
 		
 		valueLongShifted = valueLongShifted << 8 + offset;
 		valueLongShifted = valueLongShifted >> 8 + offset + (8 - overlength);
 		
-		//DEBUG
-		/*
-		Serial.print("Value1 shifted: ");
+		#if BB_DEBUG_LEVEL > 2
+		Serial.print("GetValueInternal::Value1 shifted: ");
 		Serial.println(((byte *) &valueLongShifted)[1]);
-		Serial.print("Value2 shifted: ");
+		Serial.print("GetValueInternal::Value2 shifted: ");
 		Serial.println(((byte *) &valueLongShifted)[0]);
-		*/
+		#endif
 		
 		return ((unsigned int) valueLongShifted);
 	}
