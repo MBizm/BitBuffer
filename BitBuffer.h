@@ -1,5 +1,13 @@
-#ifndef ByteBuffer_h
-#define ByteBuffer_h
+/*
+ *	DEBUGGING
+ *  for debugging purpose define BB_DEBUG_LEVEL with one of the below values, all debug information will be sent to Serial
+ *	0 - no debug information
+ *	1 - high level information (size of created array, ...); this also makes runTest() and printContent2Serial() method available to you
+ *	2 - more detailed processing information (index data is inserted, internal states after getValue, ...)
+ *	3 - bit level information for error search
+ */
+#define BB_DEBUG_LEVEL 0
+
 
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -82,15 +90,15 @@ class BitBuffer
 		 */
 		unsigned int getValue(unsigned p_index);
 		
-		//DEBUG
+		#if BB_DEBUG_LEVEL > 0
 		void runTest();
 		
-		//DEBUG
 		/*
 		 * method for tracing behavior of buffer. This will print out all previously added values in a 
 		 * string to Serial.
 		 */
 		void printContent2Serial();
+		#endif
 		
 	private:
 		// ###### VARIABLES #####
@@ -127,5 +135,3 @@ class BitBuffer
 		//performs a transformation of two byte into an integer
 		unsigned int getIntegerValue(byte highByte, byte lowByte);
 };
-
-#endif
